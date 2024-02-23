@@ -162,3 +162,5 @@ cython_debug/
 
 utils/seg.py
 .streamlit/secrets.toml
+
+.idea

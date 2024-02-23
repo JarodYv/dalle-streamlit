@@ -1,4 +1,4 @@
-replicate
-streamlit==1.30.0
+openai
+streamlit
 requests
 streamlit-image-select

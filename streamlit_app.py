@@ -1,4 +1,4 @@
-import replicate
+from openai import OpenAI
 import streamlit as st
 import requests
 import zipfile
@@ -11,23 +11,17 @@ st.set_page_config(page_title="Replicate Image Generator",
                    page_icon=":bridge_at_night:",
                    layout="wide")
 icon.show_icon(":foggy:")
-st.markdown("# :rainbow[Your Text-to-Image Artistry Studio]")
+st.markdown("# :rainbow[谱蓝文生图艺术工坊]")
 
-# API Tokens and endpoints from `.streamlit/secrets.toml` file
-REPLICATE_API_TOKEN = st.secrets["REPLICATE_API_TOKEN"]
-REPLICATE_MODEL_ENDPOINTSTABILITY = st.secrets["REPLICATE_MODEL_ENDPOINTSTABILITY"]
-
-# Resources text, link, and logo
-replicate_text = "Stability AI SDXL Model on Replicate"
-replicate_link = "https://replicate.com/stability-ai/sdxl"
-replicate_logo = "https://storage.googleapis.com/llama2_release/Screen%20Shot%202023-07-21%20at%2012.34.05%20PM.png"
+API_KEY = st.secrets["API_KEY"]
+client = OpenAI(api_key=API_KEY)
 
 # Placeholders for images and gallery
 generated_images_placeholder = st.empty()
 gallery_placeholder = st.empty()
 
 
-def configure_sidebar() -> None:
+def configure_sidebar():
     """
     Setup and display the sidebar elements.
 
@@ -36,113 +30,57 @@ def configure_sidebar() -> None:
     """
     with st.sidebar:
         with st.form("my_form"):
-            st.info("**Yo fam! Start here ↓**", icon="👋🏾")
-            with st.expander(":rainbow[**Refine your output here**]"):
+            st.info("**请开始你的创作 ↓**", icon="👋🏾")
+            with st.expander(":orange[**参数设置**]"):
                 # Advanced Settings (for the curious minds!)
-                width = st.number_input("Width of output image", value=1024)
-                height = st.number_input("Height of output image", value=1024)
-                num_outputs = st.slider(
-                    "Number of images to output", value=1, min_value=1, max_value=4)
-                scheduler = st.selectbox('Scheduler', ('DDIM', 'DPMSolverMultistep', 'HeunDiscrete',
-                                                       'KarrasDPM', 'K_EULER_ANCESTRAL', 'K_EULER', 'PNDM'))
-                num_inference_steps = st.slider(
-                    "Number of denoising steps", value=50, min_value=1, max_value=500)
-                guidance_scale = st.slider(
-                    "Scale for classifier-free guidance", value=7.5, min_value=1.0, max_value=50.0, step=0.1)
-                prompt_strength = st.slider(
-                    "Prompt strength when using img2img/inpaint(1.0 corresponds to full destruction of infomation in image)", value=0.8, max_value=1.0, step=0.1)
-                refine = st.selectbox(
-                    "Select refine style to use (left out the other 2)", ("expert_ensemble_refiner", "None"))
-                high_noise_frac = st.slider(
-                    "Fraction of noise to use for `expert_ensemble_refiner`", value=0.8, max_value=1.0, step=0.1)
+                img_size = st.selectbox('图片尺寸', ('1024x1024', '1024x1792', '1024x1792'))
+                img_quality = st.selectbox('图片质量', ('standard', 'hd'))
             prompt = st.text_area(
-                ":orange[**Enter prompt: start typing, Shakespeare ✍🏾**]",
-                value="An astronaut riding a rainbow unicorn, cinematic, dramatic")
-            negative_prompt = st.text_area(":orange[**Party poopers you don't want in image? 🙅🏽‍♂️**]",
-                                           value="the absolute worst quality, distorted features",
-                                           help="This is a negative prompt, basically type what you don't want to see in the generated image")
-
+                ":orange[**输入提示词**]",
+                value="Flat designed logo with white background featuring a stylized [dragon] with an aggressive expression, vibrant and dynamic, with light colors and sharp geometric shapes. [dragon] appears fierce and formidable, embodying the spirit of competitive gaming.")
             # The Big Red "Submit" Button!
             submitted = st.form_submit_button(
-                "Submit", type="primary", use_container_width=True)
+                "提交", type="primary", use_container_width=True)
 
-        # Credits and resources
-        st.divider()
-        st.markdown(
-            ":orange[**Resources:**]  \n"
-            f"<img src='{replicate_logo}' style='height: 1em'> [{replicate_text}]({replicate_link})",
-            unsafe_allow_html=True
-        )
-        st.markdown(
-            """
-            ---
-            Follow me on:
-
-            𝕏 → [@tonykipkemboi](https://twitter.com/tonykipkemboi)
-
-            LinkedIn → [Tony Kipkemboi](https://www.linkedin.com/in/tonykipkemboi)
-
-            """
-        )
-
-        return submitted, width, height, num_outputs, scheduler, num_inference_steps, guidance_scale, prompt_strength, refine, high_noise_frac, prompt, negative_prompt
+        return submitted, img_size, img_quality, prompt
 
 
-def main_page(submitted: bool, width: int, height: int, num_outputs: int,
-              scheduler: str, num_inference_steps: int, guidance_scale: float,
-              prompt_strength: float, refine: str, high_noise_frac: float,
-              prompt: str, negative_prompt: str) -> None:
+def main_page(submitted: bool, img_size: str, img_quality: str, prompt: str) -> None:
     """Main page layout and logic for generating images.
 
     Args:
         submitted (bool): Flag indicating whether the form has been submitted.
-        width (int): Width of the output image.
-        height (int): Height of the output image.
-        num_outputs (int): Number of images to output.
-        scheduler (str): Scheduler type for the model.
-        num_inference_steps (int): Number of denoising steps.
-        guidance_scale (float): Scale for classifier-free guidance.
-        prompt_strength (float): Prompt strength when using img2img/inpaint.
-        refine (str): Refine style to use.
-        high_noise_frac (float): Fraction of noise to use for `expert_ensemble_refiner`.
+        img_size (str): Scheduler type for the model.
+        img_quality (str): Text prompt for elements to avoid in the image.
         prompt (str): Text prompt for the image generation.
-        negative_prompt (str): Text prompt for elements to avoid in the image.
     """
     if submitted:
-        with st.status('👩🏾‍🍳 Whipping up your words into art...', expanded=True) as status:
-            st.write("⚙️ Model initiated")
-            st.write("🙆‍♀️ Stand up and strecth in the meantime")
+        with st.status('👩🏾‍🍳 正在将你的创意变成艺术...', expanded=True) as status:
+            st.write("⚙️ 模型初始化成功")
+            st.write("🙆‍♀️ 请稍等片刻")
             try:
                 # Only call the API if the "Submit" button was pressed
                 if submitted:
                     # Calling the replicate API to get the image
                     with generated_images_placeholder.container():
                         all_images = []  # List to store all generated images
-                        output = replicate.run(
-                            REPLICATE_MODEL_ENDPOINTSTABILITY,
-                            input={
-                                "prompt": prompt,
-                                "width": width,
-                                "height": height,
-                                "num_outputs": num_outputs,
-                                "scheduler": scheduler,
-                                "num_inference_steps": num_inference_steps,
-                                "guidance_scale": guidance_scale,
-                                "prompt_stregth": prompt_strength,
-                                "refine": refine,
-                                "high_noise_frac": high_noise_frac
-                            }
+                        response = client.images.generate(
+                            model="dall-e-3",
+                            prompt=prompt,
+                            size=img_size,
+                            quality=img_quality,
+                            n=1,
                         )
-                        if output:
-                            st.toast(
-                                'Your image has been generated!', icon='😍')
+                        image_url = response.data[0].url
+                        if image_url:
+                            st.toast('图片生成完成！', icon='😍')
                             # Save generated image to session state
-                            st.session_state.generated_image = output
+                            st.session_state.generated_image = [image_url]
 
                             # Displaying the image
                             for image in st.session_state.generated_image:
                                 with st.container():
-                                    st.image(image, caption="Generated Image 🎈",
+                                    st.image(image, caption="请欣赏 AI 生成的图片 🎈",
                                              use_column_width=True)
                                     # Add image to the list
                                     all_images.append(image)
@@ -162,18 +100,20 @@ def main_page(submitted: bool, width: int, height: int, num_outputs: int,
                                     image_data = response.content
                                     # Write each image to the zip file with a name
                                     zipf.writestr(
-                                        f"output_file_{i+1}.png", image_data)
+                                        f"output_file_{i + 1}.png", image_data)
                                 else:
                                     st.error(
-                                        f"Failed to fetch image {i+1} from {image}. Error code: {response.status_code}", icon="🚨")
+                                        f"Failed to fetch image {i + 1} from {image}. Error code: {response.status_code}",
+                                        icon="🚨")
                         # Create a download button for the zip file
                         st.download_button(
-                            ":red[**Download All Images**]", data=zip_io.getvalue(), file_name="output_files.zip", mime="application/zip", use_container_width=True)
-                status.update(label="✅ Images generated!",
+                            ":red[**下载图片**]", data=zip_io.getvalue(), file_name="output_files.zip",
+                            mime="application/zip", use_container_width=True)
+                status.update(label="✅ 图片生成完成!",
                               state="complete", expanded=False)
             except Exception as e:
                 print(e)
-                st.error(f'Encountered an error: {e}', icon="🚨")
+                st.error(f'出错了: {e}', icon="🚨")
 
     # If not submitted, chill here 🍹
     else:
@@ -181,20 +121,35 @@ def main_page(submitted: bool, width: int, height: int, num_outputs: int,
 
     # Gallery display for inspo
     with gallery_placeholder.container():
+        st.markdown("""
+            文生图最常用的提示框架为 **OSED**：
+            * O: Object，对象，说明想要绘制的是什么。例如图表、海报、插画
+            * S: Style，风格，描述期望的绘画风格
+            * E: Element，元素，描述图像中需要的元素
+            * D: Detail，细节，详细描述元素之间的关系以及元素的细节
+            必要时，还可以给出关键词进行补充描述。
+            
+            下面是一些提示词示例：
+            1. Flat designed logo with white background featuring a stylized [dragon] with an aggressive expression, vibrant and dynamic, with light colors and sharp geometric shapes. [dragon] appears fierce and formidable, embodying the spirit of competitive gaming.
+            2. detailed logo design on a white background with the word ["Class 3"] written in a colorful bold font decorated by Olympic decorations with light color
+            3. sport logo, eagle, Isometric illustration, synthwave palette, dark plain background, with the large text "CLASS 3" incorporated.
+            4. a sports team logo of a [tiger] with white background, the text ["Class 3"] written in a bold colorful font under the logo
+            5. a gold/blue metal texture geometric [eagle], sports brand logo opening its wings like a phoenix with feathers around, white background, and the word ["Class3"] in a bold colorful font, cinematic, poster, vibrant.
+            
+            > 注意，一般来说，在文生图中，英文提示词比中文提示词效果明显要好。
+        """)
         img = image_select(
-            label="Like what you see? Right-click and save! It's not stealing if we're sharing! 😉",
+            label="下面是一下示例 😉",
             images=[
-                "gallery/farmer_sunset.png", "gallery/astro_on_unicorn.png",
-                "gallery/friends.png", "gallery/wizard.png", "gallery/puppy.png",
-                "gallery/cheetah.png", "gallery/viking.png",
+                "gallery/logo112.png",
+                "gallery/logo117.png", "gallery/logo121.png",
+                "gallery/logo128.png", "gallery/logo139.png",
             ],
-            captions=["A farmer tilling a farm with a tractor during sunset, cinematic, dramatic",
-                      "An astronaut riding a rainbow unicorn, cinematic, dramatic",
-                      "A group of friends laughing and dancing at a music festival, joyful atmosphere, 35mm film photography",
-                      "A wizard casting a spell, intense magical energy glowing from his hands, extremely detailed fantasy illustration",
-                      "A cute puppy playing in a field of flowers, shallow depth of field, Canon photography",
-                      "A cheetah mother nurses her cubs in the tall grass of the Serengeti. The early morning sun beams down through the grass. National Geographic photography by Frans Lanting",
-                      "A close-up portrait of a bearded viking warrior in a horned helmet. He stares intensely into the distance while holding a battle axe. Dramatic mood lighting, digital oil painting",
+            captions=["示例1",
+                      "示例2",
+                      "示例3",
+                      "示例4",
+                      "示例5",
                       ],
             use_container_width=True
         )
@@ -208,9 +163,8 @@ def main():
     It retrieves the user inputs from the sidebar, and passes them to the main page function.
     The main page function then generates images based on these inputs.
     """
-    submitted, width, height, num_outputs, scheduler, num_inference_steps, guidance_scale, prompt_strength, refine, high_noise_frac, prompt, negative_prompt = configure_sidebar()
-    main_page(submitted, width, height, num_outputs, scheduler, num_inference_steps,
-              guidance_scale, prompt_strength, refine, high_noise_frac, prompt, negative_prompt)
+    submitted, img_size, img_quality, prompt = configure_sidebar()
+    main_page(submitted, img_size, img_quality, prompt)
 
 
 if __name__ == "__main__":
