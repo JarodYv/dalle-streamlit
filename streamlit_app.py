@@ -3,14 +3,14 @@ import streamlit as st
 import requests
 import zipfile
 import io
-from utils import icon
+# from utils import icon
 from streamlit_image_select import image_select
 
 # UI configurations
 st.set_page_config(page_title="Replicate Image Generator",
                    page_icon=":bridge_at_night:",
                    layout="wide")
-icon.show_icon(":foggy:")
+# icon.show_icon(":foggy:")
 st.markdown("# :rainbow[谱蓝文生图艺术工坊]")
 
 API_KEY = st.secrets["API_KEY"]
